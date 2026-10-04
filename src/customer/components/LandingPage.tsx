@@ -21,7 +21,7 @@ import {
   BadgeCheck
 } from 'lucide-react';
 import ServicesSection from './ServicesSection.tsx';
-import { initialAdvisors } from '../../db/mockData.ts';
+import { initialAdvisors } from '../data/advisorsData.ts';
 import { Language, translations } from '../../lib/translations.ts';
 
 interface LandingPageProps {
