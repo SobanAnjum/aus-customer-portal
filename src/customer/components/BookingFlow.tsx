@@ -326,7 +326,7 @@ export default function BookingFlow({
         </div>
       </div>
 
-      {/* Customer Auth Modal (Email OTP) */}
+      {/* Customer Auth Modal */}
       <CustomerAuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}

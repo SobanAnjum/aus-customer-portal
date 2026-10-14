@@ -214,7 +214,7 @@ export default function CustomerApp({
         </>
       )}
 
-      {/* Email OTP Auth Modal (Login / Registration) */}
+      {/* Customer Auth Modal (Login / Registration) */}
       <CustomerAuthModal
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
