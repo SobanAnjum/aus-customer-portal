@@ -15,6 +15,9 @@ export const API_BASE_URL: string = (
  * In production (when API_URL is "https://your-backend.com"), returns "https://your-backend.com/api/appointments".
  */
 export function getApiUrl(path: string): string {
+  if (!path || path === '') {
+    return API_BASE_URL;
+  }
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   if (!API_BASE_URL) {
     return normalizedPath;

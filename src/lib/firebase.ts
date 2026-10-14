@@ -492,6 +492,49 @@ export const migrateLocalStorageAppointmentsToSupabase = async (): Promise<void>
   } catch (_) {}
 };
 
+// Helper: Assemble resilient authentication & user identity headers
+export const getAuthHeaders = (
+  extraHeaders: Record<string, string> = {}, 
+  customerInfo?: { id?: string; name?: string; email?: string; role?: string }
+): Record<string, string> => {
+  const headers: Record<string, string> = { ...extraHeaders };
+  const rawToken = typeof localStorage !== 'undefined' 
+    ? (localStorage.getItem('supabase_token') || localStorage.getItem('idToken') || localStorage.getItem('firebase_token') || (window as any).firebaseToken)
+    : null;
+  const token = (rawToken && rawToken !== 'undefined' && rawToken !== 'null' && typeof rawToken === 'string' && rawToken.trim().length > 5) ? rawToken.trim() : null;
+
+  let userId = customerInfo?.id || '';
+  let userName = customerInfo?.name || '';
+  let userEmail = customerInfo?.email || '';
+  let userRole = customerInfo?.role || 'customer';
+
+  if ((!userId || !userName) && typeof localStorage !== 'undefined') {
+    const userStr = localStorage.getItem('user_profile') || localStorage.getItem('aus_user');
+    if (userStr) {
+      try {
+        const u = JSON.parse(userStr);
+        if (!userId) userId = u.id || u.uid || '';
+        if (!userName) userName = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.name || '';
+        if (!userEmail) userEmail = u.email || '';
+        if (u.role) userRole = u.role;
+      } catch (_) {}
+    }
+  }
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  } else if (userId) {
+    headers['Authorization'] = `Bearer token_${userId}`;
+  }
+
+  if (userId) headers['x-user-id'] = userId;
+  if (userName) headers['x-user-name'] = userName;
+  if (userEmail) headers['x-user-email'] = userEmail;
+  headers['x-user-role'] = userRole;
+
+  return headers;
+};
+
 export const uploadAppointmentMedia = async ({
   appointmentId,
   chatRoomId,
@@ -523,15 +566,7 @@ export const uploadAppointmentMedia = async ({
     if (documentDate) formData.append('documentDate', documentDate);
     if (appointmentId) formData.append('appointmentId', String(appointmentId));
 
-    const token = typeof localStorage !== 'undefined' 
-      ? localStorage.getItem('firebase_token') || `token_${uploaderId}`
-      : `token_${uploaderId}`;
-    const headers: Record<string, string> = {
-      'Authorization': `Bearer ${token}`,
-      'x-user-id': uploaderId,
-      'x-user-name': uploaderName || '',
-      'x-user-role': uploaderRole,
-    };
+    const headers = getAuthHeaders({}, { id: uploaderId, name: uploaderName, role: uploaderRole });
 
     const res = await fetch(getApiUrl(`/api/chat/rooms/${roomId}/upload`), {
       method: 'POST',
@@ -557,9 +592,8 @@ export const fetchAppointmentDocuments = async (appointmentId?: number | null, c
   
   if (roomId) {
     try {
-      const token = typeof localStorage !== 'undefined' ? localStorage.getItem('firebase_token') : null;
-      const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const customerId = roomId.startsWith('general-') ? roomId.replace('general-', '') : undefined;
+      const headers = getAuthHeaders({}, { id: customerId });
 
       const res = await fetch(getApiUrl(`/api/chat/rooms/${roomId}/documents`), { headers });
       if (res.ok) {
@@ -592,9 +626,10 @@ export const getOrCreateGeneralTicketRoom = async (
   const normalizedId = `general-${customerId.toLowerCase().replace(/[^a-z0-9_-]/g, '_')}`;
 
   try {
-    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('firebase_token') : null;
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = getAuthHeaders(
+      { 'Content-Type': 'application/json' },
+      { id: customerId, name: customerName, email: customerEmail }
+    );
 
     const res = await fetch(getApiUrl('/api/chat/rooms/get-or-create'), {
       method: 'POST',
@@ -630,9 +665,10 @@ export const getOrCreateAppointmentChatRoom = async (
   const roomId = `apt-room-${appointmentId}`;
 
   try {
-    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('firebase_token') : null;
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers = getAuthHeaders(
+      { 'Content-Type': 'application/json' },
+      { id: customerId, email: customerEmail }
+    );
 
     const res = await fetch(getApiUrl('/api/chat/rooms/get-or-create'), {
       method: 'POST',
@@ -663,9 +699,8 @@ export const getOrCreateAppointmentChatRoom = async (
 
 export const fetchChatMessages = async (roomId: string): Promise<ChatMessage[]> => {
   try {
-    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('firebase_token') : null;
-    const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const customerId = roomId.startsWith('general-') ? roomId.replace('general-', '') : undefined;
+    const headers = getAuthHeaders({}, { id: customerId });
 
     const res = await fetch(getApiUrl(`/api/chat/rooms/${roomId}/messages`), { headers });
     if (res.ok) {
@@ -705,16 +740,10 @@ export const sendChatMessage = async ({
   clientName?: string;
 }): Promise<ChatMessage> => {
   try {
-    const token = typeof localStorage !== 'undefined' 
-      ? localStorage.getItem('firebase_token') || `token_${senderId}`
-      : `token_${senderId}`;
-    const headers: Record<string, string> = { 
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      'x-user-id': senderId || '',
-      'x-user-name': senderName || '',
-      'x-user-role': senderRole || 'customer',
-    };
+    const headers = getAuthHeaders(
+      { 'Content-Type': 'application/json' },
+      { id: senderId, name: senderName, email: clientEmail, role: senderRole }
+    );
 
     const res = await fetch(getApiUrl(`/api/chat/rooms/${roomId}/messages`), {
       method: 'POST',
@@ -781,10 +810,10 @@ export const subscribeToRoomMessages = (
     if (!isSubscribed) return;
 
     try {
-      const apiUrl = getApiUrl('');
+      const baseApiUrl = (getApiUrl('') || '').replace(/\/+$/, '');
       let wsUrl: string;
-      if (apiUrl && apiUrl.startsWith('http')) {
-        wsUrl = apiUrl.replace(/^http/, 'ws') + '/ws';
+      if (baseApiUrl && baseApiUrl.startsWith('http')) {
+        wsUrl = `${baseApiUrl.replace(/^http/, 'ws')}/ws`;
       } else if (typeof window !== 'undefined') {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         // Connect to port 5000 in dev or window.location.host
