@@ -40,8 +40,9 @@ export async function apiFetch<T = any>(
     headers.set('Content-Type', 'application/json');
   }
 
-  // Inject Supabase / Auth Token if present
-  const token = (window as any).firebaseToken || (typeof localStorage !== 'undefined' ? (localStorage.getItem('supabase_token') || localStorage.getItem('idToken')) : null);
+  // Inject Supabase / Auth Token if valid
+  const rawToken = (window as any).firebaseToken || (typeof localStorage !== 'undefined' ? (localStorage.getItem('supabase_token') || localStorage.getItem('idToken') || localStorage.getItem('firebase_token')) : null);
+  const token = (rawToken && rawToken !== 'undefined' && rawToken !== 'null' && typeof rawToken === 'string' && rawToken.trim().length > 5) ? rawToken.trim() : null;
   if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
   }
@@ -52,6 +53,10 @@ export async function apiFetch<T = any>(
   });
 
   if (!response.ok) {
+    if (response.status === 401 && typeof localStorage !== 'undefined') {
+      localStorage.removeItem('idToken');
+      localStorage.removeItem('supabase_token');
+    }
     let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
     try {
       const errorData = await response.json();
